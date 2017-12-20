@@ -31,27 +31,28 @@ import org.apache.activemq.util.URISupport;
  * 
  * 
  */
-public final class NetworkBridgeFactory {
+public final class NetworkBridgeFactory implements BridgeFactory {
 
-    private final static DemandForwardingBridgeFactory DEMAND_FORWARDING_BRIDGE_FACTORY;
-
-    // Static initializer block to determine implementation of bridge factory, if there is no SPI provided a default
-    // implementation will be used.
-    static {
-        Set<DemandForwardingBridgeFactory> factories = new LinkedHashSet<>();
-        for (DemandForwardingBridgeFactory factory : ServiceLoader.load(DemandForwardingBridgeFactory.class)) {
-            factories.add(factory);
-        }
-
-        if (factories.isEmpty()) {
-            DEMAND_FORWARDING_BRIDGE_FACTORY = new DefaultDemandBridgeFactory();
-        } else {
-            DEMAND_FORWARDING_BRIDGE_FACTORY = factories.iterator().next();
-        }
-    }
+    public final static BridgeFactory INSTANCE = new NetworkBridgeFactory();
 
     private NetworkBridgeFactory() {
 
+    }
+
+    @Override
+    public DemandForwardingBridge createNetworkBridge(NetworkBridgeConfiguration configuration, Transport localTransport, Transport remoteTransport, NetworkBridgeListener listener) {
+        if (configuration.isConduitSubscriptions()) {
+            // dynamicOnly determines whether durables are auto bridged
+            return attachListener(new DurableConduitBridge(configuration, localTransport, remoteTransport), listener);
+        }
+        return attachListener(new DemandForwardingBridge(configuration, localTransport, remoteTransport), listener);
+    }
+
+    private DemandForwardingBridge attachListener(DemandForwardingBridge bridge, NetworkBridgeListener listener) {
+        if (listener != null) {
+            bridge.setNetworkBridgeListener(listener);
+        }
+        return bridge;
     }
 
     /**
@@ -66,7 +67,7 @@ public final class NetworkBridgeFactory {
     public static DemandForwardingBridge createBridge(NetworkBridgeConfiguration configuration,
                                                       Transport localTransport, Transport remoteTransport,
                                                       final NetworkBridgeListener listener) {
-        return DEMAND_FORWARDING_BRIDGE_FACTORY.createBridge(configuration, localTransport, remoteTransport, listener);
+        return INSTANCE.createNetworkBridge(configuration, localTransport, remoteTransport, listener);
     }
 
     public static Transport createLocalTransport(NetworkBridgeConfiguration configuration, URI uri) throws Exception {
@@ -85,4 +86,5 @@ public final class NetworkBridgeFactory {
         uri = URISupport.createURIWithQuery(uri, URISupport.createQueryString(map));
         return TransportFactory.connect(uri);
     }
+
 }

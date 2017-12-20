@@ -5,7 +5,7 @@ import org.apache.activemq.transport.Transport;
 /**
  * Encapsulation of bridge creation logic which are created on the fly.
  */
-public interface DemandForwardingBridgeFactory {
+public interface BridgeFactory {
 
     /**
      * Create a network bridge between two specified transports.
@@ -16,6 +16,6 @@ public interface DemandForwardingBridgeFactory {
      * @param listener Bridge listener.
      * @return the NetworkBridge
      */
-    DemandForwardingBridge createBridge(NetworkBridgeConfiguration configuration, Transport localTransport, Transport remoteTransport, final NetworkBridgeListener listener);
+    DemandForwardingBridge createNetworkBridge(NetworkBridgeConfiguration configuration, Transport localTransport, Transport remoteTransport, final NetworkBridgeListener listener);
 
 }

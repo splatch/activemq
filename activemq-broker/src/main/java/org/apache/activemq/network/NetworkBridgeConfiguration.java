@@ -77,6 +77,8 @@ public class NetworkBridgeConfiguration {
     private long gcSweepTime = 60 * 1000;
     private boolean checkDuplicateMessagesOnDuplex = false;
 
+    private BridgeFactory bridgeFactory = NetworkBridgeFactory.INSTANCE;
+
     /**
      * @return the conduitSubscriptions
      */
@@ -539,6 +541,14 @@ public class NetworkBridgeConfiguration {
 
     public boolean isUseVirtualDestSubs() {
         return useVirtualDestSubs;
+    }
+
+    public BridgeFactory getBridgeFactory() {
+        return bridgeFactory;
+    }
+
+    public void setBridgeFactory(BridgeFactory bridgeFactory) {
+        this.bridgeFactory = bridgeFactory;
     }
 
     /**
