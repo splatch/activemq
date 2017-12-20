@@ -16,112 +16,135 @@
  */
 package org.apache.activemq.network;
 
-import org.apache.activemq.ActiveMQConnectionFactory;
-import org.apache.activemq.broker.BrokerService;
-import org.apache.activemq.command.ActiveMQTopic;
-import org.apache.activemq.command.Message;
-import org.apache.activemq.transport.Transport;
-import org.apache.activemq.xbean.BrokerFactoryBean;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.mockito.Mockito;
-import org.mockito.internal.debugging.LoggingListener;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.Resource;
+import static org.junit.Assert.*;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import javax.jms.Connection;
-import javax.jms.Session;
-import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
-import static org.junit.Assert.assertTrue;
+import org.apache.activemq.command.ActiveMQQueue;
+import org.apache.activemq.command.Message;
+import org.apache.activemq.transport.Transport;
+import org.junit.Test;
+import org.mockito.Mockito;
 
-public class CustomBridgeFactoryTest {
+import javax.jms.JMSException;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageProducer;
+import javax.jms.Session;
+import javax.jms.TextMessage;
 
-    private BrokerService localBroker;
-    private BrokerService remoteBroker;
-    private Connection localConnection;
-    private Connection remoteConnection;
-    private Session localSession;
-    private Session remoteSession;
+/**
+ * Basic test which verify if custom bridge factory receives any interactions when configured.
+ */
+public class CustomBridgeFactoryTest extends BaseNetworkTest {
 
+    private ActiveMQQueue outgoing = new ActiveMQQueue("outgoing");
+
+    /**
+     * Verification of outgoing communication - from local broker (with customized bridge configured) to remote one.
+     */
     @Test
-    public void listenerCalled() {
-        NetworkConnector connector = localBroker.getNetworkConnectors().get(0);
+    public void verifyOutgoingCommunication() throws JMSException {
+        CustomNetworkBridgeFactory bridgeFactory = getCustomNetworkBridgeFactory();
+        NetworkBridgeListener listener = bridgeFactory.getListener();
+
+        verify(listener).onStart(any(NetworkBridge.class));
+        verifyNoMoreInteractions(listener);
+
+        send(localSession, outgoing, localSession.createTextMessage("test message"));
+        assertNotNull("Message didn't arrive", receive(remoteSession, outgoing));
+
+        verify(listener).onOutboundMessage(any(NetworkBridge.class), any(Message.class));
+        verifyNoMoreInteractions(listener);
+    }
+
+    /**
+     * Additional test which makes sure that custom bridge receives notification about broker shutdown.
+     */
+    @Test
+    public void verifyBrokerShutdown() {
+        shutdownTest(() -> {
+            try {
+                localBroker.stop();
+            } catch (Exception e) {
+                return e;
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Verification of network connector shutdown.
+     */
+    @Test
+    public void verifyConnectorShutdown() {
+        shutdownTest(() -> {
+            try {
+                getLocalConnector(0).stop();
+            } catch (Exception e) {
+                return e;
+            }
+            return null;
+        });
+    }
+
+    private void shutdownTest(Supplier<Throwable> callback) {
+        CustomNetworkBridgeFactory bridgeFactory = getCustomNetworkBridgeFactory();
+        NetworkBridgeListener listener = bridgeFactory.getListener();
+
+        verify(listener).onStart(any(NetworkBridge.class));
+        verifyNoMoreInteractions(listener);
+
+        Throwable throwable = callback.get();
+        assertNull("Unexpected error", throwable);
+
+        verify(listener).onStop(any(NetworkBridge.class));
+        verifyNoMoreInteractions(listener);
+    }
+
+    // helper methods
+    private void send(Session session, ActiveMQQueue destination, TextMessage message) throws JMSException {
+        MessageProducer producer = session.createProducer(destination);
+        try {
+            producer.send(message);
+        } finally {
+            producer.close();
+        }
+    }
+
+    private javax.jms.Message receive(Session session, ActiveMQQueue destination) throws JMSException {
+        MessageConsumer consumer = session.createConsumer(destination);
+        try {
+            return consumer.receive(TimeUnit.SECONDS.toMillis(5));
+        } finally {
+            consumer.close();
+        }
+    }
+
+    // infrastructure operations digging for connectors in running broker
+    private CustomNetworkBridgeFactory getCustomNetworkBridgeFactory() {
+        NetworkConnector connector = getLocalConnector(0);
 
         assertTrue(connector.getBridgeFactory() instanceof CustomNetworkBridgeFactory);
+
+        return (CustomNetworkBridgeFactory) connector.getBridgeFactory();
     }
 
-    @Before
-    public void setUp() throws Exception {
-        doSetUp(true);
+    private NetworkConnector getLocalConnector(int index) {
+        return localBroker.getNetworkConnectors().get(index);
     }
 
-    @After
-    public void tearDown() throws Exception {
-        doTearDown();
-    }
-
-    protected void doTearDown() throws Exception {
-        localConnection.close();
-        remoteConnection.close();
-        localBroker.stop();
-        remoteBroker.stop();
-    }
-
-    protected void doSetUp(boolean deleteAllMessages) throws Exception {
-        remoteBroker = createRemoteBroker();
-        remoteBroker.setDeleteAllMessagesOnStartup(deleteAllMessages);
-        remoteBroker.start();
-        remoteBroker.waitUntilStarted();
-        localBroker = createLocalBroker();
-        localBroker.setDeleteAllMessagesOnStartup(deleteAllMessages);
-        localBroker.start();
-        localBroker.waitUntilStarted();
-        URI localURI = localBroker.getVmConnectorURI();
-        ActiveMQConnectionFactory fac = new ActiveMQConnectionFactory(localURI);
-        fac.setAlwaysSyncSend(true);
-        fac.setDispatchAsync(false);
-        localConnection = fac.createConnection();
-        localConnection.setClientID("clientId");
-        localConnection.start();
-        URI remoteURI = remoteBroker.getVmConnectorURI();
-        fac = new ActiveMQConnectionFactory(remoteURI);
-        remoteConnection = fac.createConnection();
-        remoteConnection.setClientID("clientId");
-        remoteConnection.start();
-        localSession = localConnection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-        remoteSession = remoteConnection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-    }
-
-    protected String getRemoteBrokerURI() {
-        return "org/apache/activemq/network/remoteBroker.xml";
-    }
-
+    // customizations
     protected String getLocalBrokerURI() {
         return "org/apache/activemq/network/localBroker-custom-factory.xml";
     }
 
-    protected BrokerService createBroker(String uri) throws Exception {
-        Resource resource = new ClassPathResource(uri);
-        BrokerFactoryBean factory = new BrokerFactoryBean(resource);
-        resource = new ClassPathResource(uri);
-        factory = new BrokerFactoryBean(resource);
-        factory.afterPropertiesSet();
-        BrokerService result = factory.getBroker();
-        return result;
-    }
-
-    protected BrokerService createLocalBroker() throws Exception {
-        return createBroker(getLocalBrokerURI());
-    }
-
-    protected BrokerService createRemoteBroker() throws Exception {
-        return createBroker(getRemoteBrokerURI());
-    }
-
+    // test classes
     static class CustomNetworkBridgeFactory implements BridgeFactory {
 
         private final NetworkBridgeListener listener;
@@ -144,6 +167,7 @@ public class CustomBridgeFactoryTest {
             bridge.setNetworkBridgeListener(new CompositeNetworkBridgeListener(this.listener, listener, new LoggingBridgeListener()));
             return bridge;
         }
+
     }
 
     static class CompositeNetworkBridgeListener implements NetworkBridgeListener {
@@ -194,27 +218,27 @@ public class CustomBridgeFactoryTest {
 
         @Override
         public void bridgeFailed() {
-            System.out.println("Bridge failed");
+            System.out.println("=== Bridge failed");
         }
 
         @Override
         public void onStart(NetworkBridge bridge) {
-            System.out.println("Bridge started " + bridge);
+            System.out.println("=== Bridge started " + bridge);
         }
 
         @Override
         public void onStop(NetworkBridge bridge) {
-            System.out.println("Bridge stopped " + bridge);
+            System.out.println("=== Bridge stopped " + bridge);
         }
 
         @Override
         public void onOutboundMessage(NetworkBridge bridge, Message message) {
-            System.out.println("Bridge outbound message " + bridge + " " + message);
+            System.out.println("=== Bridge outbound message " + bridge + " " + message);
         }
 
         @Override
         public void onInboundMessage(NetworkBridge bridge, Message message) {
-            System.out.println("Bridge inbound message " + bridge + " " + message);
+            System.out.println("=== Bridge inbound message " + bridge + " " + message);
         }
     }
 

@@ -77,6 +77,9 @@ public class NetworkBridgeConfiguration {
     private long gcSweepTime = 60 * 1000;
     private boolean checkDuplicateMessagesOnDuplex = false;
 
+    /**
+     * Bridge factory implementation - by default backed by static factory, which is default implementation and will rely change.
+     */
     private BridgeFactory bridgeFactory = NetworkBridgeFactory.INSTANCE;
 
     /**

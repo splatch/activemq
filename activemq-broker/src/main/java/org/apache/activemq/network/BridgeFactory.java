@@ -3,7 +3,9 @@ package org.apache.activemq.network;
 import org.apache.activemq.transport.Transport;
 
 /**
- * Encapsulation of bridge creation logic which are created on the fly.
+ * Encapsulation of bridge creation logic.
+ *
+ * This SPI interface is intended to customize or decorate existing bridge implementations.
  */
 public interface BridgeFactory {
 

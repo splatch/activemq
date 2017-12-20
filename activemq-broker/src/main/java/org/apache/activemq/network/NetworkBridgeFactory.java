@@ -56,7 +56,7 @@ public final class NetworkBridgeFactory implements BridgeFactory {
     }
 
     /**
-     * create a network bridge
+     * Create a network bridge
      * 
      * @param configuration
      * @param localTransport
@@ -64,6 +64,7 @@ public final class NetworkBridgeFactory implements BridgeFactory {
      * @param listener
      * @return the NetworkBridge
      */
+    @Deprecated
     public static DemandForwardingBridge createBridge(NetworkBridgeConfiguration configuration,
                                                       Transport localTransport, Transport remoteTransport,
                                                       final NetworkBridgeListener listener) {
